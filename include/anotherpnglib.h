@@ -191,7 +191,6 @@ void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
                 b = img->pixels[j+(y-1)*img->width];
 
             filter_pixel(&x, a, b, c, bytes_per_pixel, filter);
-            
 
             img->pixels[j+y*img->width] = x;
         }
@@ -248,10 +247,9 @@ image ap_load(char* filepath) {
     parse_idat(&res, img_data, img_data_len);
 
     fclose(f);
-
     return res;
 }
 
 unsigned char* ap_save(image img) {
-
+    // ...
 }
