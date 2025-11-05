@@ -33,6 +33,7 @@ typedef struct {
     unsigned int width, height;
     unsigned char bit_depth, bpp, color_type;
     bool interlace_mode;
+    pixel* palette;
     pixel* pixels;
 } image;
 
@@ -192,6 +193,9 @@ void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
 
             filter_pixel(&x, a, b, c, bytes_per_pixel, filter);
 
+            if (img->color_type == COLTYPE_INDEXED)
+                x = img->palette[x.r];
+
             img->pixels[j+y*img->width] = x;
         }
 
@@ -207,15 +211,33 @@ void parse_chunk(unsigned char* contents, unsigned char chunk_type, long long ch
             img->bit_depth = contents[chunk_index+16];
             img->color_type = contents[chunk_index+17];
 
-            img->bpp = img->bit_depth; // grayscale and indexed
+            img->bpp = img->bit_depth; // grayscale
             if (img->color_type & 0b010)
                 img->bpp = 3 * img->bit_depth; // truecolor
+            
+            if (img->color_type & 0b001)
+                img->bpp = img->bit_depth; // indexed
             
             if (img->color_type & 0b100)
                 img->bpp += img->bit_depth; // + alpha
 
             img->interlace_mode = contents[chunk_index+20];
             img->pixels = malloc(img->width * img->height * sizeof(pixel));
+
+            break;
+        case CHUNK_PLTE:
+            unsigned int len = atoi_big(contents + chunk_index);
+
+            img->palette = malloc(len / 3 * sizeof(pixel));
+
+            for (int i = 0; i < len / 3; i++) {
+                img->palette[i] = (pixel){
+                    .r=contents[chunk_index+i*3+8],
+                    .g=contents[chunk_index+i*3+9],
+                    .b=contents[chunk_index+i*3+10],
+                    .a=255
+                };
+            }
 
             break;
     }
@@ -233,6 +255,7 @@ image ap_load(char* filepath) {
     fread(image_buf, 1, len, f);
 
     parse_chunk(image_buf, CHUNK_IHDR, chunk_index(image_buf, len, "IHDR", 0), &res);
+    parse_chunk(image_buf, CHUNK_PLTE, chunk_index(image_buf, len, "PLTE", 0), &res);
 
     long long chunk_i = 0;
     unsigned char* img_data = malloc(1);

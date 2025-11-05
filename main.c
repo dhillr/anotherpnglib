@@ -27,7 +27,7 @@ void print_image(image img) {
 }
 
 int main() {
-    image img = ap_load("images/plotworld5logo.png");
+    image img = ap_load("images/image4.png");
 
     printf("dimensions: %ux%u\nbit depth: %d\ncolor type: %s\ninterlacing: %s\n", img.width, img.height, img.bit_depth, coltype_names[img.color_type], img.interlace_mode ? "Adam7" : "none");
     print_image(img);
