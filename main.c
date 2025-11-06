@@ -1,5 +1,4 @@
 #include <anotherpnglib.h>
-#include <math.h>
 
 void print_image(image img) {
     for (int j = 0; j < img.height; j += 2) {
@@ -32,7 +31,25 @@ int main() {
     printf("dimensions: %ux%u\nbit depth: %d\ncolor type: %s\ninterlacing: %s\n", img.width, img.height, img.bit_depth, coltype_names[img.color_type], img.interlace_mode ? "Adam7" : "none");
     print_image(img);
 
-    free(img.pixels);
+    image new_img = ap_image(128, 128, 8, COLTYPE_TRUECOLOR, 0);
+
+    for (int j = 0; j < new_img.height; j++) {
+        for (int i = 0; i < new_img.width; i++) {
+            new_img.pixels[i+j*new_img.width] = (pixel){.r=i, .g=j, .b=0, .a=255};
+        }
+    }
+
+    // not working yet (will add ap_save soon)
+    FILE* f = fopen("out/out.png", "wb");
+
+    int len;
+    unsigned char* out_img = ap_save(new_img, &len);
+
+    fwrite(out_img, len, 1, f);
+
+    fclose(f);
+    ap_free_img(img);
+    ap_free_img(new_img);
 
     return 0;
 }

@@ -143,6 +143,21 @@ long long chunk_index(char* contents, size_t len_contents, char* chunk_name, siz
     return i - 4;
 }
 
+unsigned char get_bpp(unsigned char color_type, unsigned char bit_depth) {
+    unsigned char res = bit_depth;
+
+    if (color_type & 0b010)
+        res = 3 * bit_depth; // truecolor
+    
+    if (color_type & 0b001)
+        res = bit_depth; // indexed
+    
+    if (color_type & 0b100)
+        res += bit_depth; // + alpha
+
+    return res;
+}
+
 void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
     unsigned char bytes_per_pixel = img->bpp >> 3;
     unsigned char buf[(img->width+1)*img->height*bytes_per_pixel];
@@ -193,6 +208,13 @@ void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
 
             filter_pixel(&x, a, b, c, bytes_per_pixel, filter);
 
+            if (!(img->color_type & 0b010)) {
+                if (img->color_type & 0b100)
+                    x.a = x.g;
+                x.g = x.r;
+                x.b = x.r;
+            }
+
             if (img->color_type == COLTYPE_INDEXED)
                 x = img->palette[x.r];
 
@@ -211,15 +233,7 @@ void parse_chunk(unsigned char* contents, unsigned char chunk_type, long long ch
             img->bit_depth = contents[chunk_index+16];
             img->color_type = contents[chunk_index+17];
 
-            img->bpp = img->bit_depth; // grayscale
-            if (img->color_type & 0b010)
-                img->bpp = 3 * img->bit_depth; // truecolor
-            
-            if (img->color_type & 0b001)
-                img->bpp = img->bit_depth; // indexed
-            
-            if (img->color_type & 0b100)
-                img->bpp += img->bit_depth; // + alpha
+            img->bpp = get_bpp(img->color_type, img->bit_depth);
 
             img->interlace_mode = contents[chunk_index+20];
             img->pixels = malloc(img->width * img->height * sizeof(pixel));
@@ -243,6 +257,16 @@ void parse_chunk(unsigned char* contents, unsigned char chunk_type, long long ch
     }
 }
 
+image ap_image(unsigned int width, unsigned int height, unsigned char bit_depth, unsigned char color_type, bool interlace_mode) {
+    return (image){
+        .width=width, .height=height,
+        .color_type=color_type,
+        .bit_depth=bit_depth, .bpp=get_bpp(color_type, bit_depth),
+        .interlace_mode=interlace_mode,
+        .pixels=malloc(width * height * sizeof(pixel))
+    };
+}
+
 image ap_load(char* filepath) {
     FILE* f = fopen(filepath, "rb");
     image res;
@@ -255,7 +279,9 @@ image ap_load(char* filepath) {
     fread(image_buf, 1, len, f);
 
     parse_chunk(image_buf, CHUNK_IHDR, chunk_index(image_buf, len, "IHDR", 0), &res);
-    parse_chunk(image_buf, CHUNK_PLTE, chunk_index(image_buf, len, "PLTE", 0), &res);
+
+    if (res.color_type == COLTYPE_INDEXED)
+        parse_chunk(image_buf, CHUNK_PLTE, chunk_index(image_buf, len, "PLTE", 0), &res);
 
     long long chunk_i = 0;
     unsigned char* img_data = malloc(1);
@@ -273,6 +299,28 @@ image ap_load(char* filepath) {
     return res;
 }
 
-unsigned char* ap_save(image img) {
-    // ...
+unsigned char* ap_save(image img, int* len) {
+    unsigned int avail_out = img.width * img.height * img.bpp;
+    unsigned char res[avail_out];
+    
+    // z_stream stream = {
+    //     .zalloc=NULL,
+    //     .zfree=NULL,
+    //     .opaque=NULL,
+    //     .avail_in=...,
+    //     .next_in=...,
+    //     .avail_out=(img->width + 1) * img->height * bytes_per_pixel,
+    //     .next_out=res,
+    // };
+    
+    // inflateInit(&stream);
+    // inflate(&stream, Z_NO_FLUSH);
+    // inflateEnd(&stream);
+}
+
+void* ap_free_img(image img) {
+    if (img.palette)
+        free(img.palette);
+    
+    free(img.pixels);
 }
