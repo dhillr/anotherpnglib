@@ -47,6 +47,36 @@ unsigned int atoi_big(unsigned char* str) {
     return (str[0] << 24) + (str[1] << 16) + (str[2] << 8) + str[3];
 }
 
+/*
+    converts uint32 to base256 big-endian mode
+*/
+unsigned char* itoa_big(unsigned int num) {
+    unsigned char* res = malloc(4);
+    res[0] = num >> 24;
+    res[1] = num >> 16;
+    res[2] = num >> 8;
+    res[3] = num;
+
+    return res;
+}
+
+/*
+    converts uLong to base256 big-endian mode
+*/
+unsigned char* ultoa_big(unsigned int num) {
+    unsigned char* res = malloc(8);
+    res[0] = num >> 56;
+    res[1] = num >> 48;
+    res[2] = num >> 40;
+    res[3] = num >> 32;
+    res[4] = num >> 24;
+    res[5] = num >> 16;
+    res[6] = num >> 8;
+    res[7] = num;
+
+    return res;
+}
+
 void print_hex(unsigned char* hex, size_t len) {
     for (int j = 0; j < len; j += HEX_LINE_CHARS) {
         if (j > len)
@@ -144,18 +174,20 @@ long long chunk_index(char* contents, size_t len_contents, char* chunk_name, siz
 }
 
 unsigned char get_bpp(unsigned char color_type, unsigned char bit_depth) {
-    unsigned char res = bit_depth;
+    unsigned char res = bit_depth; // grayscale and indexed
 
-    if (color_type & 0b010)
+    if (color_type & 0b010 && !(color_type & 0b001))
         res = 3 * bit_depth; // truecolor
-    
-    if (color_type & 0b001)
-        res = bit_depth; // indexed
     
     if (color_type & 0b100)
         res += bit_depth; // + alpha
 
     return res;
+}
+
+unsigned long get_crc(unsigned char* txt, unsigned int len) {
+    unsigned long res = crc32(0, Z_NULL, 0);
+    return crc32(res, txt, len);
 }
 
 void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
@@ -301,21 +333,44 @@ image ap_load(char* filepath) {
 
 unsigned char* ap_save(image img, int* len) {
     unsigned int avail_out = img.width * img.height * img.bpp;
-    unsigned char res[avail_out];
+    unsigned char buf[avail_out];
+
+    unsigned char* res = calloc(16, 1);
+    memcpy(res, "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\0\0\0\x0dIHDR", 16);
+
+    unsigned char* p1 = itoa_big(img.width);
+    unsigned char* p2 = itoa_big(img.height);
+    memcpy(res + 16, p1, 4);
+    memcpy(res + 20, p2, 4);
     
+    free(p1);
+    free(p2);
+
+    res[24] = img.bit_depth;
+    res[25] = img.color_type;
+    res[28] = img.interlace_mode;
+
+    *len = 24;
+    
+    // for the idat chunk
     // z_stream stream = {
     //     .zalloc=NULL,
     //     .zfree=NULL,
     //     .opaque=NULL,
     //     .avail_in=...,
     //     .next_in=...,
-    //     .avail_out=(img->width + 1) * img->height * bytes_per_pixel,
-    //     .next_out=res,
+    //     .avail_out=avail_out,
+    //     .next_out=buf,
     // };
     
-    // inflateInit(&stream);
-    // inflate(&stream, Z_NO_FLUSH);
-    // inflateEnd(&stream);
+    // deflateInit(&stream);
+    // deflate(&stream, Z_NO_FLUSH);
+    // deflateEnd(&stream);
+
+    // unsigned long checksum = crc32(0, Z_NULL, 0);
+    // checksum = crc(checksum, ..., [len]);
+
+    return res;
 }
 
 void* ap_free_img(image img) {

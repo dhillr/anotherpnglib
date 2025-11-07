@@ -31,7 +31,7 @@ int main() {
     printf("dimensions: %ux%u\nbit depth: %d\ncolor type: %s\ninterlacing: %s\n", img.width, img.height, img.bit_depth, coltype_names[img.color_type], img.interlace_mode ? "Adam7" : "none");
     print_image(img);
 
-    image new_img = ap_image(128, 128, 8, COLTYPE_TRUECOLOR, 0);
+    image new_img = ap_image(256, 256, 8, COLTYPE_TRUECOLOR, 0);
 
     for (int j = 0; j < new_img.height; j++) {
         for (int i = 0; i < new_img.width; i++) {
