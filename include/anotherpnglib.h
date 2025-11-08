@@ -9,10 +9,17 @@
 #define max(a, b) a > b ? a : b
 #define PIXEL_NONE (pixel){.p={0, 0, 0, 0}}
 
-#define CHUNK_IHDR 0
-#define CHUNK_PLTE 1
-#define CHUNK_IDAT 2
-#define CHUNK_IEND 3
+// critical chunks
+#define CHUNK_IHDR 0x80
+#define CHUNK_PLTE 0x81
+#define CHUNK_IDAT 0x82
+#define CHUNK_IEND 0x83
+
+// ancillary chunks
+#define CHUNK_tRNS 0x84
+#define CHUNK_sRGB 0x85
+#define CHUNK_bkGD 0x86
+#define CHUNK_tIME 0x87
 
 #define COLTYPE_GRAYSCALE       0
 #define COLTYPE_TRUECOLOR       2
@@ -49,6 +56,7 @@ unsigned int atoi_big(unsigned char* str) {
 
 /*
     converts uint32 to base256 big-endian mode
+    note: result is allocated
 */
 unsigned char* itoa_big(unsigned int num) {
     unsigned char* res = malloc(4);
@@ -56,23 +64,6 @@ unsigned char* itoa_big(unsigned int num) {
     res[1] = num >> 16;
     res[2] = num >> 8;
     res[3] = num;
-
-    return res;
-}
-
-/*
-    converts uLong to base256 big-endian mode
-*/
-unsigned char* ultoa_big(unsigned int num) {
-    unsigned char* res = malloc(8);
-    res[0] = num >> 56;
-    res[1] = num >> 48;
-    res[2] = num >> 40;
-    res[3] = num >> 32;
-    res[4] = num >> 24;
-    res[5] = num >> 16;
-    res[6] = num >> 8;
-    res[7] = num;
 
     return res;
 }
@@ -185,9 +176,8 @@ unsigned char get_bpp(unsigned char color_type, unsigned char bit_depth) {
     return res;
 }
 
-unsigned long get_crc(unsigned char* txt, unsigned int len) {
-    unsigned long res = crc32(0, Z_NULL, 0);
-    return crc32(res, txt, len);
+unsigned int get_crc(unsigned char* txt, unsigned int len) {
+    return crc32(crc32(0, Z_NULL, 0), txt, len);
 }
 
 void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
@@ -332,43 +322,83 @@ image ap_load(char* filepath) {
 }
 
 unsigned char* ap_save(image img, int* len) {
-    unsigned int avail_out = img.width * img.height * img.bpp;
-    unsigned char buf[avail_out];
+    unsigned char bytes_per_pixel = img.bpp >> 3;
 
-    unsigned char* res = calloc(16, 1);
+    unsigned int avail_in = (img.width + 1) * img.height * bytes_per_pixel;
+
+    unsigned char* res = calloc(33, 1);
     memcpy(res, "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\0\0\0\x0dIHDR", 16);
+
+    unsigned char ihdr_chunk[17];
+    memset(ihdr_chunk, 0, 17);
 
     unsigned char* p1 = itoa_big(img.width);
     unsigned char* p2 = itoa_big(img.height);
-    memcpy(res + 16, p1, 4);
-    memcpy(res + 20, p2, 4);
+    memcpy(ihdr_chunk, p1, 4);
+    memcpy(ihdr_chunk + 4, p2, 4);
     
     free(p1);
     free(p2);
 
-    res[24] = img.bit_depth;
-    res[25] = img.color_type;
-    res[28] = img.interlace_mode;
+    ihdr_chunk[8] = img.bit_depth;
+    ihdr_chunk[9] = img.color_type;
+    ihdr_chunk[12] = img.interlace_mode;
 
-    *len = 24;
-    
-    // for the idat chunk
-    // z_stream stream = {
-    //     .zalloc=NULL,
-    //     .zfree=NULL,
-    //     .opaque=NULL,
-    //     .avail_in=...,
-    //     .next_in=...,
-    //     .avail_out=avail_out,
-    //     .next_out=buf,
-    // };
-    
-    // deflateInit(&stream);
-    // deflate(&stream, Z_NO_FLUSH);
-    // deflateEnd(&stream);
+    unsigned char* p3 = itoa_big(get_crc(res + 12, 17));
+    memcpy(ihdr_chunk + 13, p3, 4);
 
-    // unsigned long checksum = crc32(0, Z_NULL, 0);
-    // checksum = crc(checksum, ..., [len]);
+    free(p3);
+
+    memcpy(res + 16, ihdr_chunk, 17);
+
+    unsigned char pixel_data[avail_in];
+
+    for (int j = 0; j < img.height; j++) {
+        pixel_data[bytes_per_pixel*j*(img.width+1)] = '\0'; // no filtering for now
+        for (int i = 0; i < img.width; i++) {
+            for (int k = 0; k < bytes_per_pixel; k++)
+                pixel_data[bytes_per_pixel*(i+1+j*(img.width+1))+k] = img.pixels[i+j*img.width].p[k];
+        }
+    }
+
+    unsigned int avail_out = compressBound(avail_in);
+    unsigned char buf[avail_out];
+
+    z_stream stream = {
+        .zalloc=NULL,
+        .zfree=NULL,
+        .opaque=NULL,
+        .avail_in=avail_in,
+        .next_in=pixel_data,
+        .avail_out=avail_out,
+        .next_out=buf,
+    };
+
+    deflateInit(&stream, Z_DEFAULT_COMPRESSION);
+    deflate(&stream, Z_NO_FLUSH);
+    deflateEnd(&stream);
+
+    unsigned char idat_chunk[stream.total_out+12];
+    res = realloc(res, 33 + stream.total_out + 12 + 12);
+
+    unsigned char* p4 = itoa_big(stream.total_out);
+
+    memcpy(idat_chunk, p4, 4);
+    memcpy(idat_chunk + 4, "IDAT", 4);
+    memcpy(idat_chunk + 8, buf, stream.total_out);
+    
+    unsigned char* p5 = itoa_big(get_crc(idat_chunk + 4, stream.total_out + 4));
+    memcpy(idat_chunk + stream.total_out + 8, p5, stream.total_out);
+
+    memcpy(res + 33, idat_chunk, stream.total_out + 12);
+    memcpy(res + 33 + stream.total_out + 12, "\0\0\0\0IEND\xae\x42\x60\x82", 12);
+
+    free(p4);
+    free(p5);
+    
+    printf("yay!\n");
+
+    *len = 33 + stream.total_out + 12 + 12;
 
     return res;
 }

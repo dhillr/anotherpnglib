@@ -32,7 +32,7 @@ int main() {
     print_image(img);
 
     image new_img = ap_image(256, 256, 8, COLTYPE_TRUECOLOR, 0);
-
+    
     for (int j = 0; j < new_img.height; j++) {
         for (int i = 0; i < new_img.width; i++) {
             new_img.pixels[i+j*new_img.width] = (pixel){.r=i, .g=j, .b=0, .a=255};
@@ -48,6 +48,7 @@ int main() {
     fwrite(out_img, len, 1, f);
 
     fclose(f);
+    free(out_img);
     ap_free_img(img);
     ap_free_img(new_img);
 
