@@ -180,6 +180,24 @@ unsigned int get_crc(unsigned char* txt, unsigned int len) {
     return crc32(crc32(0, Z_NULL, 0), txt, len);
 }
 
+void append_chunk(unsigned char* file_data, unsigned int* file_data_len, char* chunk_name, unsigned char* chunk_data, unsigned int len) {
+    unsigned char chunk[len+12];
+
+    unsigned char* p1 = itoa_big(len);
+    memcpy(chunk, p1, 4);
+    memcpy(chunk + 4, chunk_name, 4);
+    memcpy(chunk + 8, chunk_data, len);
+
+    unsigned char* p2 = itoa_big(get_crc(chunk_data, len));
+    memcpy(chunk + 8 + len, p2, 4);
+
+    file_data = realloc(file_data, *file_data_len + len + 12);
+    *file_data_len += len + 12;
+
+    free(p1);
+    free(p2);
+}
+
 void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
     unsigned char bytes_per_pixel = img->bpp >> 3;
     unsigned char buf[(img->width+1)*img->height*bytes_per_pixel];
@@ -248,6 +266,11 @@ void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
 }
 
 void parse_chunk(unsigned char* contents, unsigned char chunk_type, long long chunk_index, image* img) {
+    if (chunk_index < 0)
+        return;
+
+    unsigned int len = atoi_big(contents + chunk_index);
+
     switch (chunk_type) {
         case CHUNK_IHDR:
             img->width = atoi_big(contents + chunk_index + 8);
@@ -262,20 +285,22 @@ void parse_chunk(unsigned char* contents, unsigned char chunk_type, long long ch
 
             break;
         case CHUNK_PLTE:
-            unsigned int len = atoi_big(contents + chunk_index);
-
             img->palette = malloc(len / 3 * sizeof(pixel));
 
-            for (int i = 0; i < len / 3; i++) {
+            for (int i = 0; i < len / 3; i++)
                 img->palette[i] = (pixel){
                     .r=contents[chunk_index+i*3+8],
                     .g=contents[chunk_index+i*3+9],
                     .b=contents[chunk_index+i*3+10],
                     .a=255
                 };
-            }
 
             break;
+        // case CHUNK_tRNS:
+        //     for (int i = 0; i < len; i++)
+        //         img->palette[i].a = contents[chunk_index+i];
+            
+        //     break;
     }
 }
 
@@ -302,8 +327,10 @@ image ap_load(char* filepath) {
 
     parse_chunk(image_buf, CHUNK_IHDR, chunk_index(image_buf, len, "IHDR", 0), &res);
 
-    if (res.color_type == COLTYPE_INDEXED)
+    if (res.color_type == COLTYPE_INDEXED) {
         parse_chunk(image_buf, CHUNK_PLTE, chunk_index(image_buf, len, "PLTE", 0), &res);
+        parse_chunk(image_buf, CHUNK_tRNS, chunk_index(image_buf, len, "tRNS", 0), &res);
+    }
 
     long long chunk_i = 0;
     unsigned char* img_data = malloc(1);
@@ -321,10 +348,11 @@ image ap_load(char* filepath) {
     return res;
 }
 
+
 unsigned char* ap_save(image img, int* len) {
     unsigned char bytes_per_pixel = img.bpp >> 3;
 
-    unsigned int avail_in = (img.width + 1) * img.height * bytes_per_pixel;
+    unsigned int avail_in = (img.width * bytes_per_pixel + 1) * img.height * bytes_per_pixel;
 
     unsigned char* res = calloc(33, 1);
     memcpy(res, "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\0\0\0\x0dIHDR", 16);
@@ -354,10 +382,10 @@ unsigned char* ap_save(image img, int* len) {
     unsigned char pixel_data[avail_in];
 
     for (int j = 0; j < img.height; j++) {
-        pixel_data[bytes_per_pixel*j*(img.width+1)] = '\0'; // no filtering for now
+        pixel_data[j*(img.width*bytes_per_pixel+1)] = '\0'; // no filtering for now
         for (int i = 0; i < img.width; i++) {
             for (int k = 0; k < bytes_per_pixel; k++)
-                pixel_data[bytes_per_pixel*(i+1+j*(img.width+1))+k] = img.pixels[i+j*img.width].p[k];
+                pixel_data[i*bytes_per_pixel+1+j*(img.width*bytes_per_pixel+1)+k] = img.pixels[i+j*img.width].p[k];
         }
     }
 
@@ -395,8 +423,6 @@ unsigned char* ap_save(image img, int* len) {
 
     free(p4);
     free(p5);
-    
-    printf("yay!\n");
 
     *len = 33 + stream.total_out + 12 + 12;
 

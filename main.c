@@ -31,15 +31,15 @@ int main() {
     printf("dimensions: %ux%u\nbit depth: %d\ncolor type: %s\ninterlacing: %s\n", img.width, img.height, img.bit_depth, coltype_names[img.color_type], img.interlace_mode ? "Adam7" : "none");
     print_image(img);
 
-    image new_img = ap_image(256, 256, 8, COLTYPE_TRUECOLOR, 0);
+    image new_img = ap_image(64, 64, 8, COLTYPE_TRUECOLOR_APLHA, 0);
     
     for (int j = 0; j < new_img.height; j++) {
         for (int i = 0; i < new_img.width; i++) {
-            new_img.pixels[i+j*new_img.width] = (pixel){.r=i, .g=j, .b=0, .a=255};
+            new_img.pixels[i+j*new_img.width] = (pixel){.r=i, .g=j, .b=0, .a=i+j};
         }
     }
 
-    // not working yet (will add ap_save soon)
+    // BARELY working, lots of bugs
     FILE* f = fopen("out/out.png", "wb");
 
     int len;
@@ -49,7 +49,11 @@ int main() {
 
     fclose(f);
     free(out_img);
-    ap_free_img(img);
+
+    // image out = ap_load("out/out.png");
+    // print_image(out);
+
+    // ap_free_img(img);
     ap_free_img(new_img);
 
     return 0;
