@@ -21,11 +21,11 @@
 #define CHUNK_bkGD 0x86
 #define CHUNK_tIME 0x87
 
-#define COLTYPE_GRAYSCALE       0
-#define COLTYPE_TRUECOLOR       2
-#define COLTYPE_INDEXED         3
-#define COLTYPE_GRAYSCALE_APLHA 4
-#define COLTYPE_TRUECOLOR_APLHA 6
+#define COLTYPE_GRAYSCALE       0x00
+#define COLTYPE_TRUECOLOR       0x02
+#define COLTYPE_INDEXED         0x03
+#define COLTYPE_GRAYSCALE_APLHA 0x04
+#define COLTYPE_TRUECOLOR_APLHA 0x06
 
 typedef union {
     struct { unsigned char r, g, b, a; };
@@ -36,6 +36,7 @@ typedef union {
     struct { unsigned short r, g, b, a; };
     unsigned short p[4];
 } pixel16;
+
 typedef struct {
     unsigned int width, height;
     unsigned char bit_depth, bpp, color_type;
@@ -45,6 +46,13 @@ typedef struct {
 } image;
 
 char* coltype_names[] = {"GRAYSCALE", "", "TRUECOLOR", "INDEXED", "GRAYSCALE_ALPHA", "", "TRUECOLOR_ALPHA"};
+char* chunk_names[] = {"IHDR", "PLTE", "IDAT", "IEND", "tRNS", "sRGB", "bkGD", "tIME"};
+
+char* label(unsigned char id) {
+    if (id & 0b10000000)
+        return chunk_names[id&0b00111111];
+    return coltype_names[id&0b00111111];
+}
 
 /*
     converts base256 to uint32 big-endian mode
@@ -191,7 +199,8 @@ void append_chunk(unsigned char* file_data, unsigned int* file_data_len, char* c
     unsigned char* p2 = itoa_big(get_crc(chunk_data, len));
     memcpy(chunk + 8 + len, p2, 4);
 
-    file_data = realloc(file_data, *file_data_len + len + 12);
+    memcpy(file_data + *file_data_len, chunk, len + 12);
+
     *file_data_len += len + 12;
 
     free(p1);
@@ -348,13 +357,13 @@ image ap_load(char* filepath) {
     return res;
 }
 
-
 unsigned char* ap_save(image img, int* len) {
     unsigned char bytes_per_pixel = img.bpp >> 3;
 
     unsigned int avail_in = (img.width * bytes_per_pixel + 1) * img.height * bytes_per_pixel;
 
     unsigned char* res = calloc(33, 1);
+    *len = 33;
     memcpy(res, "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\0\0\0\x0dIHDR", 16);
 
     unsigned char ihdr_chunk[17];
@@ -403,7 +412,7 @@ unsigned char* ap_save(image img, int* len) {
     };
 
     deflateInit(&stream, Z_DEFAULT_COMPRESSION);
-    deflate(&stream, Z_NO_FLUSH);
+    deflate(&stream, Z_FINISH);
     deflateEnd(&stream);
 
     unsigned char idat_chunk[stream.total_out+12];
@@ -416,13 +425,13 @@ unsigned char* ap_save(image img, int* len) {
     memcpy(idat_chunk + 8, buf, stream.total_out);
     
     unsigned char* p5 = itoa_big(get_crc(idat_chunk + 4, stream.total_out + 4));
-    memcpy(idat_chunk + stream.total_out + 8, p5, stream.total_out);
+    memcpy(idat_chunk + stream.total_out + 8, p5, 4);
 
     memcpy(res + 33, idat_chunk, stream.total_out + 12);
     memcpy(res + 33 + stream.total_out + 12, "\0\0\0\0IEND\xae\x42\x60\x82", 12);
 
-    free(p4);
-    free(p5);
+    // free(p4);
+    // free(p5);
 
     *len = 33 + stream.total_out + 12 + 12;
 

@@ -28,14 +28,14 @@ void print_image(image img) {
 int main() {
     image img = ap_load("images/image4.png");
 
-    printf("dimensions: %ux%u\nbit depth: %d\ncolor type: %s\ninterlacing: %s\n", img.width, img.height, img.bit_depth, coltype_names[img.color_type], img.interlace_mode ? "Adam7" : "none");
+    printf("dimensions: %ux%u\nbit depth: %d\ncolor type: %s\ninterlacing: %s\n", img.width, img.height, img.bit_depth, label(img.color_type), img.interlace_mode ? "Adam7" : "none");
     print_image(img);
 
-    image new_img = ap_image(64, 64, 8, COLTYPE_TRUECOLOR_APLHA, 0);
+    image new_img = ap_image(256, 256, 8, COLTYPE_TRUECOLOR, 0);
     
     for (int j = 0; j < new_img.height; j++) {
         for (int i = 0; i < new_img.width; i++) {
-            new_img.pixels[i+j*new_img.width] = (pixel){.r=i, .g=j, .b=0, .a=i+j};
+            new_img.pixels[i+j*new_img.width] = (pixel){.r=i, .g=j, .b=0, .a=255};
         }
     }
 
@@ -50,10 +50,7 @@ int main() {
     fclose(f);
     free(out_img);
 
-    // image out = ap_load("out/out.png");
-    // print_image(out);
-
-    // ap_free_img(img);
+    ap_free_img(img);
     ap_free_img(new_img);
 
     return 0;
