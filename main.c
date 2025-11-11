@@ -39,7 +39,7 @@ int main() {
         }
     }
 
-    // BARELY working, lots of bugs
+    // working!!!
     FILE* f = fopen("out/out.png", "wb");
 
     int len;

@@ -24,8 +24,8 @@
 #define COLTYPE_GRAYSCALE       0x00
 #define COLTYPE_TRUECOLOR       0x02
 #define COLTYPE_INDEXED         0x03
-#define COLTYPE_GRAYSCALE_APLHA 0x04
-#define COLTYPE_TRUECOLOR_APLHA 0x06
+#define COLTYPE_GRAYSCALE_ALPHA 0x04
+#define COLTYPE_TRUECOLOR_ALPHA 0x06
 
 typedef union {
     struct { unsigned char r, g, b, a; };
@@ -106,32 +106,25 @@ void print_hex(unsigned char* hex, size_t len) {
     }
 }
 
-void pixel_blend(pixel* a, pixel b) {
-    a->r += b.r;
-    a->g += b.g;
-    a->b += b.b;
-    a->a += b.a;
+void pixel_blend(pixel* a, pixel b, int mode) {
+    a->r += b.r * mode;
+    a->g += b.g * mode;
+    a->b += b.b * mode;
+    a->a += b.a * mode;
 }
 
-void pixel_difference(pixel* a, pixel b) {
-    a->r -= b.r;
-    a->g -= b.g;
-    a->b -= b.b;
-    a->a -= b.a;
-}
-
-void filter_pixel(pixel* x, pixel a, pixel b, pixel c, unsigned char bytes_per_pixel, int filter) {
+void filter_pixel(pixel* x, pixel a, pixel b, pixel c, unsigned char bytes_per_pixel, int filter, int mult) {
     if (filter == 1)
-        pixel_blend(x, a);
+        pixel_blend(x, a, -mult);
 
     if (filter == 2)
-        pixel_blend(x, b);
+        pixel_blend(x, b, -mult);
 
     if (filter == 3) {
-        x->r += (a.r + b.r) >> 1;
-        x->g += (a.g + b.g) >> 1;
-        x->b += (a.b + b.b) >> 1;
-        x->a += (a.a + b.a) >> 1;
+        x->r -= ((a.r + b.r) >> 1) * mult;
+        x->g -= ((a.g + b.g) >> 1) * mult;
+        x->b -= ((a.b + b.b) >> 1) * mult;
+        x->a -= ((a.a + b.a) >> 1) * mult;
     }
 
     if (filter == 4) {
@@ -147,11 +140,11 @@ void filter_pixel(pixel* x, pixel a, pixel b, pixel c, unsigned char bytes_per_p
             int pc = abs(p - byte_c);
 
             if (pa <= pb && pa <= pc)
-                x->p[k] += byte_a;
+                x->p[k] -= byte_a * mult;
             else if (pb <= pc)
-                x->p[k] += byte_b;
+                x->p[k] -= byte_b * mult;
             else
-                x->p[k] += byte_c;
+                x->p[k] -= byte_c * mult;
         }
     }
 }
@@ -255,7 +248,7 @@ void parse_idat(image* img, unsigned char* compressed_img_data, size_t len) {
             if (y > 0)
                 b = img->pixels[j+(y-1)*img->width];
 
-            filter_pixel(&x, a, b, c, bytes_per_pixel, filter);
+            filter_pixel(&x, a, b, c, bytes_per_pixel, filter, -1);
 
             if (!(img->color_type & 0b010)) {
                 if (img->color_type & 0b100)
@@ -388,13 +381,71 @@ unsigned char* ap_save(image img, int* len) {
 
     memcpy(res + 16, ihdr_chunk, 17);
 
+    pixel img_pixels[img.width*img.height];
+    memcpy(img_pixels, img.pixels, img.width * img.height * sizeof(pixel));
     unsigned char pixel_data[avail_in];
 
     for (int j = 0; j < img.height; j++) {
-        pixel_data[j*(img.width*bytes_per_pixel+1)] = '\0'; // no filtering for now
+        size_t smallest_sum = ULONG_LONG_MAX;
+        ssize_t sums[5] = {0, 0, 0, 0, 0};
+        int best_filter = 0;
+
+        for (int filter = 0; filter < 5; filter++) {
+            for (int i = 0; i < img.width; i++) {
+                pixel a = PIXEL_NONE;
+                pixel b = PIXEL_NONE;
+                pixel c = PIXEL_NONE;
+                
+                if (i > 0) {
+                    a = img.pixels[i-1+j*img.width];
+                    if (j > 0)
+                        c = img.pixels[i-1+(j-1)*img.width];
+                }
+
+                if (j > 0)
+                    b = img.pixels[i+(j-1)*img.width];
+                
+                pixel x = img.pixels[i+j*img.width];
+
+                filter_pixel(&x, a, b, c, bytes_per_pixel, filter, 1);
+                
+                for (int k = 0; k < bytes_per_pixel; k++) {
+                    int val = x.p[k];
+                    
+                    if (val >= 128)
+                        val = -val;
+
+                    sums[filter] += val;
+                }
+            }
+
+            smallest_sum = min(smallest_sum, sums[filter]);
+        }
+
+        for (int filter = 0; filter < 5; filter++) {
+            if (sums[filter] == smallest_sum)
+                best_filter = filter;
+        }
+
+        pixel_data[j*(img.width*bytes_per_pixel+1)] = best_filter; // no filtering for now
         for (int i = 0; i < img.width; i++) {
+            pixel a = PIXEL_NONE;
+            pixel b = PIXEL_NONE;
+            pixel c = PIXEL_NONE;
+            
+            if (i > 0) {
+                a = img.pixels[i-1+j*img.width];
+                if (j > 0)
+                    c = img.pixels[i-1+(j-1)*img.width];
+            }
+
+            if (j > 0)
+                b = img.pixels[i+(j-1)*img.width];
+
+            filter_pixel(img_pixels + i + j * img.width, a, b, c, bytes_per_pixel, best_filter, 1);
+            
             for (int k = 0; k < bytes_per_pixel; k++)
-                pixel_data[i*bytes_per_pixel+1+j*(img.width*bytes_per_pixel+1)+k] = img.pixels[i+j*img.width].p[k];
+                pixel_data[i*bytes_per_pixel+1+j*(img.width*bytes_per_pixel+1)+k] = img_pixels[i+j*img.width].p[k];
         }
     }
 
