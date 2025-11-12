@@ -39,6 +39,8 @@ int main() {
         }
     }
 
+    lz77("hiii bro bro :)", 15);
+
     // working!!!
     FILE* f = fopen("out/out.png", "wb");
 

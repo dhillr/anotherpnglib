@@ -1,7 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
 #include <zlib.h>
+#include <deflate_inflate_crc.h>
 
 #define HEX_LINE_CHARS 32
 
