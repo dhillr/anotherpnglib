@@ -39,7 +39,7 @@ int main() {
         }
     }
 
-    lz77("hiii bro bro :)", 15);
+    lz77("0101001", 7);
 
     // working!!!
     FILE* f = fopen("out/out.png", "wb");
